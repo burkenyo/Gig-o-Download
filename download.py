@@ -3,6 +3,7 @@ import base64
 from bs4 import BeautifulSoup, Tag
 from dataclasses import dataclass
 from datetime import date, datetime
+import getpass
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import requests
 from requests.exceptions import HTTPError
 from selenium import webdriver
 from selenium.webdriver.remote.webdriver import WebDriver
+import shutil
 import sys
 from tempfile import NamedTemporaryFile
 
@@ -44,19 +46,46 @@ download_parser.add_argument('-e', '--end-date', type=date.fromisoformat, defaul
 download_parser.add_argument('-b', '--browser', choices=['Chrome', 'ChromiumEdge', 'Firefox'], default='Firefox',
                     help='The browser to use to generate PDFs of archived gigs. Chrome and ChromiumEdge '
                         + 'tend to be faster; Firefox tends to produce smaller sizes. Defaults to Firefox.')
+commands.add_parser('clear-cache', help='Clears cached data, including the auth cookie.')
 args = parser.parse_args()
 
-auth_cookie = Path('config', 'auth-cookie.txt').read_text()
+CACHE_PATH = Path('cache')
+CACHE_PATH.mkdir(exist_ok=True)
 
 # helper functions
 
 def fetch(path: str) -> str:
-    response =  requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': auth_cookie})
+    auth_cookie_file = Path(CACHE_PATH, 'auth-cookie.txt')
+    tries = 0
+    while not auth_cookie_file.exists():
+        match tries:
+            case 0:
+                print('Auth cookie not found! Please enter credentials.')
+            case 3:
+                print(f'Could not retrieve auth cookie after {tries} attempts!', file=sys.stderr)
+                exit(1)
+            case _:
+                print('Could not retrieve auth cookie! Ensure you’ve entered the correct credentials.', file=sys.stderr)
+
+        email = input('      Gig-o email: ')
+        password = getpass.getpass('   Gig-o password: ')
+        login_response = requests.post('https://www.gig-o-matic.com/login',{'email': email, 'password': password},
+                                       allow_redirects=False)
+
+        auth_cookie = login_response.cookies.get('auth')
+        if auth_cookie is not None:
+            auth_cookie_file.write_text(auth_cookie)
+
+        tries += 1
+
+    response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': auth_cookie_file.read_text()})
+    if response.status_code == 401:
+        auth_cookie_file.unlink()
     response.raise_for_status()
     return response.text
 
 def list_bands(bands: list):
-    print(f'You have access to these bands:\n    {"name":<15}id\n{"-" * 100}')
+    print(f'\nYou have access to these bands:\n    {"name":<15}id\n{"-" * 100}')
     for band in bands:
         print(f'    {band["shortname"]:<15}{band["id"]}')
     print('')
@@ -66,7 +95,7 @@ def get_band_info(band_id_or_short_name: str) -> tuple[str, str]:
         band = fetch('api/band/' + band_id_or_short_name)
         return band['id'], band['shortname']
     except HTTPError as ex:
-        if ex.response.status_code != 404:
+        if ex.response.status_code not in [404]:
             raise
 
     bands = json.loads(fetch('api/bands'))
@@ -81,14 +110,16 @@ def get_band_info(band_id_or_short_name: str) -> tuple[str, str]:
 
 def get_out_dir(band_short_name: str) -> Path:
     out_dir_name = 'out-' + re.sub(r'[^A-Za-z0-9_]', '', band_short_name)
-    return re.sub(' {2,}', ' ', out_dir_name).strip()
+    out_dir = Path(re.sub(' {2,}', ' ', out_dir_name).strip())
+    out_dir.mkdir(exist_ok=True)
+    return out_dir
 
 def get_gigs(band_id: str) -> list[Gig]:
-    path = Path('cache', 'gigs.json')
-    if path.exists():
-        gigs_json = json.loads(path.read_text())
+    gigs_file = Path('cache', 'gigs.json')
+    if gigs_file.exists():
+        gigs_json = json.loads(gigs_file.read_text())
         if gigs_json['band_id'] != band_id:
-            path.unlink()
+            gigs_file.unlink()
 
             return get_gigs(band_id)
 
@@ -108,7 +139,7 @@ def get_gigs(band_id: str) -> list[Gig]:
     archivePageHtml = BeautifulSoup(fetch('band_gig_archive?bk=' + band_id), 'html.parser')
     gigs = sorted((getGig(r) for r in archivePageHtml.css.select('div.row div.row')), key=lambda g: g.date)
     gigs_json = {'band_id': band_id, 'gigs': [{'id': g.id, 'name': g.name, 'date': g.date.isoformat()} for g in gigs]}
-    path.write_text(json.dumps(gigs_json, indent=2))
+    gigs_file.write_text(json.dumps(gigs_json, indent=2))
 
     return gigs
 
@@ -138,7 +169,6 @@ match args.command:
 
     case 'download':
         (band_id, band_short_name) = get_band_info(args.band_id_or_short_name)
-        out_dir = get_out_dir(band_short_name)
         gigs = get_gigs(band_id)
         if args.start_date:
             gigs = filter(lambda g: g.date >= args.start_date, gigs)
@@ -151,8 +181,12 @@ match args.command:
             exit(1)
 
         print(f'Downloading {len(gigs)} gigs...')
+        out_dir = get_out_dir(band_short_name)
         with getattr(webdriver, args.browser)() as driver:
             for gig in gigs:
                 print(gig.fileSafeName)
                 download_gig_pdf(gig, out_dir, driver)
                 download_gig_json(gig, out_dir)
+
+    case 'clear-cache':
+        shutil.rmtree(CACHE_PATH)
