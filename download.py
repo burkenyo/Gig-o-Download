@@ -143,22 +143,26 @@ def get_gigs(band_id: str) -> list[Gig]:
 
     return gigs
 
-def download_gig_pdf(gig: Gig, out_dir: Path, driver: WebDriver):
+def download_gig_pdf(gig: Gig, out_dir: Path, driver: WebDriver) -> bool:
     path = Path(out_dir, gig.fileSafeName + '.pdf')
     if path.exists():
-        return
+        return False
 
     with NamedTemporaryFile('w+', suffix='.html') as t:
         t.write(fetch('gig_info.html?gk=' + gig.id))
         driver.get('file://' + t.name)
         path.write_bytes(base64.b64decode(driver.print_page()))
 
-def download_gig_json(gig: Gig, out_dir: Path):
+        return True
+
+def download_gig_json(gig: Gig, out_dir: Path) -> bool:
     path = Path(out_dir, gig.fileSafeName + '.json')
     if path.exists():
-        return
+        return False
 
     path.write_text(fetch('api/gig/' + gig.id))
+
+    return True
 
 # command processing
 
@@ -184,9 +188,11 @@ match args.command:
         out_dir = get_out_dir(band_short_name)
         with getattr(webdriver, args.browser)() as driver:
             for gig in gigs:
-                print(gig.fileSafeName)
-                download_gig_pdf(gig, out_dir, driver)
-                download_gig_json(gig, out_dir)
+                print(f'{gig.fileSafeName:<80}', end='')
+                downloaded = download_gig_pdf(gig, out_dir, driver)
+                downloaded |= download_gig_json(gig, out_dir)
+
+                print('' if downloaded else ' (skipped)')
 
     case 'clear-cache':
         shutil.rmtree(CACHE_PATH)
