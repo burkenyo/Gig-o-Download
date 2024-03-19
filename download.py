@@ -29,6 +29,18 @@ class Gig:
         name = str(self.date) + ' ' + re.sub(r'[^A-Za-z0-9 ,\.-]', '', self.name)
         return re.sub(' {2,}', ' ', name).strip()
 
+CACHE_PATH = Path('cache')
+CACHE_PATH.mkdir(exist_ok=True)
+AUTH_COOKIE_FILE = Path(CACHE_PATH, 'auth-cookie.txt')
+
+if (AUTH_COOKIE_FILE.exists()):
+    # I don’t want to store an auth token for longer than necessary, so remove any existing cookie that’s too old
+    stat_result = AUTH_COOKIE_FILE.stat()
+    # Windows comptability with Python < 3.12
+    create_datetime = datetime.fromtimestamp(getattr(stat_result, 'st_birthtime', stat_result.st_ctime))
+    if (datetime.now() - create_datetime).days >= 3:
+        AUTH_COOKIE_FILE.unlink()
+
 # arguments
 
 parser = ArgumentParser(description='Downloads archived gig info from Gig-o-Matic version 2. '
@@ -49,18 +61,14 @@ download_parser.add_argument('-b', '--browser', choices=['Chrome', 'ChromiumEdge
 commands.add_parser('clear-cache', help='Clears cached data, including the auth cookie.')
 args = parser.parse_args()
 
-CACHE_PATH = Path('cache')
-CACHE_PATH.mkdir(exist_ok=True)
-
 # helper functions
 
-def fetch(path: str) -> str:
-    auth_cookie_file = Path(CACHE_PATH, 'auth-cookie.txt')
+def ensureAuthCookie():
     tries = 0
-    while not auth_cookie_file.exists():
+    while not AUTH_COOKIE_FILE.exists():
         match tries:
             case 0:
-                print('Auth cookie not found! Please enter credentials.')
+                print('Auth cookie expired or not found! Please enter credentials.')
             case 3:
                 print(f'Could not retrieve auth cookie after {tries} attempts!', file=sys.stderr)
                 exit(1)
@@ -74,13 +82,15 @@ def fetch(path: str) -> str:
 
         auth_cookie = login_response.cookies.get('auth')
         if auth_cookie is not None:
-            auth_cookie_file.write_text(auth_cookie)
+            AUTH_COOKIE_FILE.write_text(auth_cookie)
 
         tries += 1
 
-    response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': auth_cookie_file.read_text()})
+def fetch(path: str) -> str:
+    ensureAuthCookie()
+    response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': AUTH_COOKIE_FILE.read_text()})
     if response.status_code == 401:
-        auth_cookie_file.unlink()
+        AUTH_COOKIE_FILE.unlink()
     response.raise_for_status()
     return response.text
 
