@@ -1,3 +1,4 @@
+import _startup
 from argparse import ArgumentParser
 import base64
 from bs4 import BeautifulSoup, Tag
@@ -5,7 +6,6 @@ from dataclasses import dataclass
 from datetime import date, datetime
 import getpass
 import json
-import os
 from pathlib import Path
 import re
 import requests
@@ -16,8 +16,6 @@ import shutil
 import sys
 from tempfile import NamedTemporaryFile
 
-os.chdir(os.path.dirname(__file__))
-
 @dataclass
 class Gig:
     id: str
@@ -27,7 +25,7 @@ class Gig:
     @property
     def fileSafeName(self) -> str:
         name = str(self.date) + ' ' + re.sub(r'[^A-Za-z0-9 ,\.-]', '', self.name)
-        return re.sub(' {2,}', ' ', name).strip()
+        return re.sub(r'\s+', ' ', name).strip()
 
 CACHE_PATH = Path('cache')
 CACHE_PATH.mkdir(exist_ok=True)
@@ -120,7 +118,7 @@ def get_band_info(band_id_or_short_name: str) -> tuple[str, str]:
 
 def get_out_dir(band_short_name: str) -> Path:
     out_dir_name = 'out-' + re.sub(r'[^A-Za-z0-9_]', '', band_short_name)
-    out_dir = Path(re.sub(' {2,}', ' ', out_dir_name).strip())
+    out_dir = Path(out_dir_name)
     out_dir.mkdir(exist_ok=True)
     return out_dir
 
@@ -158,7 +156,9 @@ def download_gig_pdf(gig: Gig, out_dir: Path, driver: WebDriver) -> bool:
     if path.exists():
         return False
 
-    with NamedTemporaryFile('w+', suffix='.html') as t:
+    # delete_on_close=False is needed on Windows so the browser can access the file.
+    # The file is still deleted when the context manager exits
+    with NamedTemporaryFile('w+', suffix='.html', delete_on_close=sys.platform != 'win32') as t:
         t.write(fetch('gig_info.html?gk=' + gig.id))
         driver.get('file://' + t.name)
         path.write_bytes(base64.b64decode(driver.print_page()))
