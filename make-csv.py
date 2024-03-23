@@ -1,10 +1,8 @@
+import _startup
 from argparse import ArgumentParser
 import csv
 import json
-import os
 from pathlib import Path
-
-os.chdir(os.path.dirname(__file__))
 
 parser = ArgumentParser(description="Combines and converts downloaded gigs’ raw JSON files into "
                         + "a single CSV file suitable for searching and analysis. The generated file "
