@@ -1,9 +1,6 @@
-from argparse import ArgumentTypeError
 import csv
 import json
 from pathlib import Path
-import re
-from .paths import *
 
 def make_csv(out_dir: Path):
     gigs = [json.loads(f.read_text()) for f in out_dir.glob('*.json')]

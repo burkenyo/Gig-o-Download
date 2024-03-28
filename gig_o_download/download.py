@@ -20,9 +20,19 @@ class Gig:
     date: date
 
     @property
-    def fileSafeName(self) -> str:
-        name = str(self.date) + ' ' + re.sub(r'[^A-Za-z0-9 ,\.-]', '', self.name)
+    def file_safe_name(self) -> str:
+        name = str(self.date) + ' ' + re.sub(r'[^A-Za-z0-9 ,\._-]', '', self.name)
         return re.sub(r'\s+', ' ', name).strip()
+
+@dataclass
+class Band:
+    id: str
+    short_name: str
+    name: str
+
+    @property
+    def file_safe_name(self) -> str:
+        return re.sub(r'[^A-Za-z0-9_-]', '', self.short_name)
 
 # helper functions
 
@@ -31,7 +41,7 @@ def ensureAuthCookie():
     while not AUTH_COOKIE_FILE.exists():
         match tries:
             case 0:
-                print('Auth cookie expired or not found! Please enter credentials.')
+                print('Auth cookie invalid, expired or not found! Please enter credentials.')
             case 3:
                 print(f'Could not retrieve auth cookie after {tries} attempts!', file=sys.stderr)
                 exit(1)
@@ -49,55 +59,51 @@ def ensureAuthCookie():
 
         tries += 1
 
-def fetch(path: str) -> str:
-    ensureAuthCookie()
-    response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': AUTH_COOKIE_FILE.read_text()})
-    if response.status_code == 401:
+    test_response = requests.post('https://www.gig-o-matic.com/api/session', cookies={'auth': AUTH_COOKIE_FILE.read_text()})
+    if test_response.status_code != 200:
         AUTH_COOKIE_FILE.unlink()
+        ensureAuthCookie()
+
+def fetch(path: str) -> str:
+    response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': AUTH_COOKIE_FILE.read_text()})
     response.raise_for_status()
     return response.text
 
-def print_bands(bands: list):
+def get_bands() -> list[Band]:
+    return [Band(b['id'], b['shortname'], b['name']) for b in json.loads(fetch('api/bands'))]
+
+def print_bands(bands: list[Band]):
     print(f'\nYou have access to these bands:\n    {"name":<15}id\n{"-" * 100}')
     for band in bands:
-        print(f'    {band["shortname"]:<15}{band["id"]}')
+        print(f'    {band.short_name:<15}{band.id}')
     print('')
 
-def get_band_info(band_id_or_short_name: str) -> tuple[str, str]:
+def get_band(band_id_or_short_name: str) -> Band:
     try:
-        band = fetch('api/band/' + band_id_or_short_name)
-        return band['id'], band['shortname']
+        band_json = json.loads(fetch('api/band/' + band_id_or_short_name))
+        return Band(band_id_or_short_name, band_json['shortname'], band_json['name'])
     except HTTPError as ex:
-        if ex.response.status_code not in [404]:
+        if ex.response.status_code not in [401, 404]:
             raise
 
-    bands = json.loads(fetch('api/bands'))
-    matched_bands = list(filter(lambda b: b['shortname'].lower() == band_id_or_short_name.lower(), bands))
+    bands = get_bands()
+    matched_bands = list(filter(lambda b: band_id_or_short_name.lower() in [b.short_name.lower(), b.file_safe_name.lower()], bands))
 
     if (len(matched_bands)) == 0:
         print(f'Band {band_id_or_short_name} does not exist or you do not have access to it!', file=sys.stderr)
         print_bands(bands)
         exit(1)
 
-    return matched_bands[0]['id'], matched_bands[0]['shortname']
+    return matched_bands[0]
 
-def get_out_dir(band_short_name: str) -> Path:
-    out_dir_name = re.sub(r'[^A-Za-z0-9_-]', '', band_short_name)
-    out_dir = Path(DATA_PATH, out_dir_name)
-    out_dir.mkdir(exist_ok=True)
-    return out_dir
-
-def get_gigs(band_id: str) -> list[Gig]:
-    gigs_file = Path(CACHE_PATH, 'gigs.json')
+def get_gigs(band: Band) -> list[Gig]:
+    band_id = band.id
+    gigs_file = Path(ensureDir(CACHE_PATH, band.file_safe_name), 'gigs.json')
     if gigs_file.exists():
         gigs_json = json.loads(gigs_file.read_text())
-        if gigs_json['band_id'] != band_id:
-            gigs_file.unlink()
-
-            return get_gigs(band_id)
 
         print('Using cached gigs list...')
-        return sorted((Gig(g['id'], g['name'], date.fromisoformat(g['date'])) for g in gigs_json['gigs']),
+        return sorted((Gig(g['id'], g['name'], date.fromisoformat(g['date'])) for g in gigs_json),
                       key=lambda g: g.date)
 
     def getGig(div: Tag) -> Gig:
@@ -111,13 +117,13 @@ def get_gigs(band_id: str) -> list[Gig]:
     print('Fetching gigs list...')
     archivePageHtml = BeautifulSoup(fetch('band_gig_archive?bk=' + band_id), 'html.parser')
     gigs = sorted((getGig(r) for r in archivePageHtml.css.select('div.row div.row')), key=lambda g: g.date)
-    gigs_json = {'band_id': band_id, 'gigs': [{'id': g.id, 'name': g.name, 'date': g.date.isoformat()} for g in gigs]}
+    gigs_json = [{'id': g.id, 'name': g.name, 'date': g.date.isoformat()} for g in gigs]
     gigs_file.write_text(json.dumps(gigs_json))
 
     return gigs
 
 def download_gig_pdf(gig: Gig, out_dir: Path, browser: WebDriver) -> bool:
-    path = Path(out_dir, gig.fileSafeName + '.pdf')
+    path = Path(out_dir, gig.file_safe_name + '.pdf')
     if path.exists():
         return False
 
@@ -131,7 +137,7 @@ def download_gig_pdf(gig: Gig, out_dir: Path, browser: WebDriver) -> bool:
         return True
 
 def download_gig_json(gig: Gig, out_dir: Path) -> bool:
-    path = Path(out_dir, gig.fileSafeName + '.json')
+    path = Path(out_dir, gig.file_safe_name + '.json')
     if path.exists():
         return False
 
@@ -142,12 +148,13 @@ def download_gig_json(gig: Gig, out_dir: Path) -> bool:
 # command processing
 
 def list_bands():
-    bands = json.loads(fetch('api/bands'))
-    print_bands(bands)
+    ensureAuthCookie()
+    print_bands(get_bands())
 
 def download(band_id_or_short_name: str, browser_class: type[WebDriver], start_date: date | None, end_date: date | None):
-    (band_id, band_short_name) = get_band_info(band_id_or_short_name)
-    gigs = get_gigs(band_id)
+    ensureAuthCookie()
+    band = get_band(band_id_or_short_name)
+    gigs = get_gigs(band)
     if start_date:
         gigs = filter(lambda g: g.date >= start_date, gigs)
     if end_date:
@@ -159,10 +166,10 @@ def download(band_id_or_short_name: str, browser_class: type[WebDriver], start_d
         exit(1)
 
     print(f'Downloading {len(gigs)} gigs...')
-    out_dir = get_out_dir(band_short_name)
+    out_dir = ensureDir(DATA_PATH, band.file_safe_name)
     with browser_class() as browser:
         for gig in gigs:
-            print(f'{gig.fileSafeName:<80}', end='')
+            print(f'{gig.file_safe_name:<80}', end='')
             downloaded = download_gig_pdf(gig, out_dir, browser)
             downloaded |= download_gig_json(gig, out_dir)
 
