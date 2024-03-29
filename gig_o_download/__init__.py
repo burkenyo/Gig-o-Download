@@ -1,10 +1,12 @@
 from argparse import ArgumentParser
-from datetime import date, datetime
+from datetime import date
 import locale
 import re
 import shutil
 from selenium import webdriver
 import sys
+
+from . import auth
 from . import download
 from . import make_csv
 from .paths import *
@@ -14,12 +16,7 @@ if not re.fullmatch('utf-?8', locale.getpreferredencoding(), re.IGNORECASE):
     print(f'To enable utf-8 mode please invoke via “python -X utf8 {__name__} ...”')
     exit(1)
 
-if (AUTH_COOKIE_FILE.exists()):
-    # I don’t want to store an auth token for longer than necessary, so remove any existing cookie that’s too old
-    stat_result = AUTH_COOKIE_FILE.stat()
-    create_datetime = datetime.fromtimestamp(stat_result.st_birthtime)
-    if (datetime.now() - create_datetime).days >= 3:
-        AUTH_COOKIE_FILE.unlink()
+auth.cleanup_old_auth_cookie_file()
 
 parser = ArgumentParser(description='Downloads archived gig info from Gig-o-Matic version 2.')
 commands = parser.add_subparsers(title='commands', dest='command', required=True)
@@ -38,7 +35,7 @@ download_parser.add_argument('-b', '--browser', choices=['Chrome', 'ChromiumEdge
 make_csv_parser = commands.add_parser('make-csv', help='Combine and convert downloaded gigs’ raw JSON files into '
                                       + 'a single CSV file suitable for searching and analysis. The generated file '
                                       + 'can be opened in Microsoft Excel or uploaded to Google Sheets.')
-make_csv_parser.add_argument('out_dir', choices=[p.name for p in Path(DATA_PATH).iterdir() if p.is_dir()],
+make_csv_parser.add_argument('out_dir', type=make_csv.get_out_dir_from_arg,
                              help='The directory where gigs’ raw JSON files are found.')
 commands.add_parser('clear-cache', help='Clear cached data, including the auth cookie.')
 args = parser.parse_args()
@@ -55,8 +52,11 @@ match args.command:
         shutil.rmtree(CACHE_PATH)
 
     case 'make-csv':
-        out_dir = Path(DATA_PATH, args.out_dir)
-        make_csv.make_csv(out_dir)
+        make_csv.make_csv(args.out_dir)
+
 
 def main():
+    """A shim to support installation as a command-line script.
+    Actual command processing occurs at the module level.
+    """
     pass
