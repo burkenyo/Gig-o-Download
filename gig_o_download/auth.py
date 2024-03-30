@@ -43,9 +43,13 @@ def cleanup_old_auth_cookie_file():
         if (datetime.now() - create_datetime).days >= 3:
             _AUTH_COOKIE_FILE.unlink()
 
-def get_auth_cookie() -> str:
+def get_auth_cookie(force_new_cookie: bool = False) -> str:
     global _do_ensure_auth_cookie_file
-    if _do_ensure_auth_cookie_file:
+    if force_new_cookie:
+        _AUTH_COOKIE_FILE.unlink()
+        _ensure_auth_cookie_file()
+        _do_ensure_auth_cookie_file = False
+    elif _do_ensure_auth_cookie_file:
         _ensure_auth_cookie_file()
         _do_ensure_auth_cookie_file = False
 
