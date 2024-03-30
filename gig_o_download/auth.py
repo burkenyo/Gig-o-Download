@@ -26,11 +26,11 @@ def _ensure_auth_cookie_file():
 
         auth_cookie = login_response.cookies.get('auth')
         if auth_cookie is not None:
-            _AUTH_COOKIE_FILE.write_text(auth_cookie)
+            write_utf8(_AUTH_COOKIE_FILE, auth_cookie)
 
         tries += 1
 
-    test_response = requests.post('https://www.gig-o-matic.com/api/session', cookies={'auth': _AUTH_COOKIE_FILE.read_text()})
+    test_response = requests.post('https://www.gig-o-matic.com/api/session', cookies={'auth': read_utf8(_AUTH_COOKIE_FILE)})
     if test_response.status_code != 200:
         _AUTH_COOKIE_FILE.unlink()
         _ensure_auth_cookie_file()
@@ -49,4 +49,4 @@ def get_auth_cookie() -> str:
         _ensure_auth_cookie_file()
         _do_ensure_auth_cookie_file = False
 
-    return _AUTH_COOKIE_FILE.read_text()
+    return read_utf8(_AUTH_COOKIE_FILE)

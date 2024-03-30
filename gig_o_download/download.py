@@ -3,13 +3,11 @@ from bs4 import BeautifulSoup, Tag
 from dataclasses import dataclass
 from datetime import date, datetime
 import json
-from pathlib import Path
 import re
 import requests
 from requests.exceptions import HTTPError
 from selenium.webdriver.remote.webdriver import WebDriver
 import sys
-from tempfile import NamedTemporaryFile
 from . import auth
 from .paths import *
 
@@ -72,7 +70,7 @@ def _get_gigs(band: Band) -> list[Gig]:
     band_id = band.id
     gigs_file = Path(ensure_dir(CACHE_PATH, band.file_safe_name), 'gigs.json')
     if gigs_file.exists():
-        gigs_json = json.loads(gigs_file.read_text())
+        gigs_json = json.loads(read_utf8(gigs_file))
 
         print('Using cached gigs list...')
         return sorted((Gig(g['id'], g['name'], date.fromisoformat(g['date'])) for g in gigs_json),
@@ -90,30 +88,28 @@ def _get_gigs(band: Band) -> list[Gig]:
     archivePageHtml = BeautifulSoup(_fetch('band_gig_archive?bk=' + band_id), 'html.parser')
     gigs = sorted((get_gig(r) for r in archivePageHtml.css.select('div.row div.row')), key=lambda g: g.date)
     gigs_json = [{'id': g.id, 'name': g.name, 'date': g.date.isoformat()} for g in gigs]
-    gigs_file.write_text(json.dumps(gigs_json))
+    write_utf8(gigs_file, json.dumps(gigs_json))
 
     return gigs
 
 def _download_gig_pdf(gig: Gig, out_dir: Path, browser: WebDriver) -> bool:
-    path = Path(out_dir, gig.file_safe_name + '.pdf')
-    if path.exists():
+    file = Path(out_dir, gig.file_safe_name + '.pdf')
+    if file.exists():
         return False
 
-    # delete_on_close=False is needed on Windows so the browser can access the file.
-    # The file is still deleted when the context manager exits
-    with NamedTemporaryFile('w+', suffix='.html', delete_on_close=sys.platform != 'win32') as t:
-        t.write(_fetch('gig_info.html?gk=' + gig.id))
-        browser.get('file://' + t.name)
-        path.write_bytes(base64.b64decode(browser.print_page()))
+    with temporary_utf8_file('w+', '.html', sys.platform != 'win32') as temp_file:
+        temp_file.write(_fetch('gig_info.html?gk=' + gig.id))
+        browser.get('file://' + temp_file.name)
+        file.write_bytes(base64.b64decode(browser.print_page()))
 
         return True
 
 def _download_gig_json(gig: Gig, out_dir: Path) -> bool:
-    path = Path(out_dir, gig.file_safe_name + '.json')
-    if path.exists():
+    file = Path(out_dir, gig.file_safe_name + '.json')
+    if file.exists():
         return False
 
-    path.write_text(json.dumps(json.loads(_fetch('api/gig/' + gig.id)), indent=2))
+    write_utf8(file, json.dumps(json.loads(_fetch('api/gig/' + gig.id)), indent=2))
 
     return True
 

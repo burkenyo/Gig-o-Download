@@ -1,20 +1,12 @@
 from argparse import ArgumentParser
 from datetime import date
-import locale
-import re
 import shutil
 from selenium import webdriver
-import sys
 
 from . import auth
 from . import download
 from . import make_csv
 from .paths import *
-
-if not re.fullmatch('utf-?8', locale.getpreferredencoding(), re.IGNORECASE):
-    print('This utility needs to be run with utf-8 default encoding enabled!', file=sys.stderr)
-    print(f'To enable utf-8 mode please invoke via “python -X utf8 {__name__} ...”')
-    exit(1)
 
 auth.cleanup_old_auth_cookie_file()
 
