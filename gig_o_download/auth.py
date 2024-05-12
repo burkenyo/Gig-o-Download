@@ -21,7 +21,7 @@ def _ensure_auth_cookie_file():
 
         email = input('      Gig-o email: ')
         password = getpass.getpass('   Gig-o password: ')
-        login_response = requests.post('https://www.gig-o-matic.com/login', {'email': email, 'password': password},
+        login_response = requests.post('https://old.gig-o-matic.com/login', {'email': email, 'password': password},
                                        allow_redirects=False)
 
         auth_cookie = login_response.cookies.get('auth')
@@ -30,7 +30,7 @@ def _ensure_auth_cookie_file():
 
         tries += 1
 
-    test_response = requests.post('https://www.gig-o-matic.com/api/session', cookies={'auth': read_utf8(_AUTH_COOKIE_FILE)})
+    test_response = requests.post('https://old.gig-o-matic.com/api/session', cookies={'auth': read_utf8(_AUTH_COOKIE_FILE)})
     if test_response.status_code != 200:
         _AUTH_COOKIE_FILE.unlink()
         _ensure_auth_cookie_file()

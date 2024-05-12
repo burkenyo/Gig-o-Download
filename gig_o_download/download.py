@@ -35,9 +35,9 @@ class Band:
 # helper functions
 
 def _fetch(path: str) -> str:
-    response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': auth.get_auth_cookie()})
+    response = requests.get('https://old.gig-o-matic.com/' + path, cookies={'auth': auth.get_auth_cookie()})
     if response.status_code == 401:
-        response = requests.get('https://www.gig-o-matic.com/' + path, cookies={'auth': auth.get_auth_cookie(True)})
+        response = requests.get('https://old.gig-o-matic.com/' + path, cookies={'auth': auth.get_auth_cookie(True)})
     response.raise_for_status()
     return response.text
 
