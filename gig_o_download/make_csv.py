@@ -1,20 +1,28 @@
 from argparse import ArgumentTypeError
 import csv
 import json
+import sys
 from .paths import *
 
-def get_out_dir_from_arg(out_dir_name: str) -> Path:
-    dirs = list(filter(Path.is_dir, DATA_PATH.iterdir()))
+def get_out_dir_from_args(data_dir: Path, out_dir_name: str) -> Path:
+    def bail(message: str):
+        print("Error with out-dir argument: " + message, file=sys.stderr)
+        exit(1)
+
+    if not data_dir.exists():
+        bail('no gigs have been downloaded!')
+
+    dirs = list(filter(Path.is_dir, data_dir.iterdir()))
     if not dirs:
-        raise ArgumentTypeError('No gigs have been downloaded!')
+        bail('no gigs have been downloaded!')
 
     out_dir = next(filter(lambda p: p.name.lower() == out_dir_name.lower(), dirs), None)
     if out_dir is None:
         msg = f'{out_dir_name} not found! Valid options are: {", ".join(d.name for d in dirs)}'
-        raise ArgumentTypeError(msg)
+        bail(msg)
 
     if not next(out_dir.glob('*.json'), None):
-        raise ArgumentTypeError(f'No gigs have been downloaded for {out_dir.name}!')
+        bail(f'no gigs have been downloaded for {out_dir.name}!')
 
     return out_dir
 

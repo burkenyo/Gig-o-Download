@@ -24,11 +24,16 @@ download_parser.add_argument('-e', '--end-date', type=date.fromisoformat, defaul
 download_parser.add_argument('-b', '--browser', choices=['Chrome', 'ChromiumEdge', 'Firefox'], default='Firefox',
                              help='The browser to use to generate PDFs of archived gigs. Chrome and ChromiumEdge '
                              + 'tend to be faster; Firefox tends to produce smaller sizes. Defaults to Firefox.')
+download_parser.add_argument('-d', '--data-dir', type=get_out_dir_from_arg, default=DEFAULT_DATA_PATH,
+                             help='The directory into which to download the archive.')
 make_csv_parser = commands.add_parser('make-csv', help='Combine and convert downloaded gigs’ raw JSON files into '
                                       + 'a single CSV file suitable for searching and analysis. The generated file '
                                       + 'can be opened in Microsoft Excel or uploaded to Google Sheets.')
-make_csv_parser.add_argument('out_dir', type=make_csv.get_out_dir_from_arg,
-                             help='The directory where gigs’ raw JSON files are found.')
+make_csv_parser.add_argument('archive_dir',
+                             help='The directory (usually the band’s short name) where gigs’ raw JSON files are found. '
+                             + 'If --data-dir is specified, it is searched for this.')
+make_csv_parser.add_argument('-d', '--data-dir', type=get_out_dir_from_arg, default=DEFAULT_DATA_PATH,
+                             help='The directory in which to search for the downloaded archive.')
 commands.add_parser('clear-cache', help='Clear cached data, including the auth cookie.')
 args = parser.parse_args()
 
@@ -38,13 +43,14 @@ match args.command:
 
     case 'download':
         browser_class = getattr(webdriver, args.browser)
-        download.download(args.band_id_or_short_name, browser_class, args.start_date, args.end_date)
+        download.download(args.data_dir, args.band_id_or_short_name, browser_class, args.start_date, args.end_date)
 
     case 'clear-cache':
         shutil.rmtree(CACHE_PATH)
 
     case 'make-csv':
-        make_csv.make_csv(args.out_dir)
+        out_dir = make_csv.get_out_dir_from_args(args.data_dir, args.archive_dir)
+        make_csv.make_csv(out_dir)
 
 
 def main():

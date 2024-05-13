@@ -120,7 +120,7 @@ def _download_gig_json(gig: Gig, out_dir: Path) -> bool:
 def list_bands():
     _print_bands(_get_bands())
 
-def download(band_id_or_short_name: str, browser_class: type[WebDriver], start_date: date | None, end_date: date | None):
+def download(data_dir: Path, band_id_or_short_name: str, browser_class: type[WebDriver], start_date: date | None, end_date: date | None):
     band = _get_band(band_id_or_short_name)
     gigs = _get_gigs(band)
     if start_date:
@@ -134,7 +134,7 @@ def download(band_id_or_short_name: str, browser_class: type[WebDriver], start_d
         exit(1)
 
     print(f'Downloading {len(gigs)} gigs...')
-    out_dir = ensure_dir(DATA_PATH, band.file_safe_name)
+    out_dir = ensure_dir(data_dir, band.file_safe_name)
     with browser_class() as browser:
         for gig in gigs:
             print(f'{gig.file_safe_name:<80}', end='')
